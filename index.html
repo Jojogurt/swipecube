@@ -20,7 +20,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .logo span{color:var(--accent2)}
 
 /* ===== SHARED ZONE ===== */
-.zone{flex:1;position:relative;display:flex;align-items:center;justify-content:center;margin:6px 16px;border-radius:20px;background:var(--surface);border:1px solid var(--surface2);overflow:hidden;transition:border-color .3s}
+.zone{flex:1;position:relative;display:flex;align-items:center;justify-content:center;margin:6px 16px;border-radius:20px;background:var(--surface);border:1px solid var(--surface2);overflow:hidden;transition:border-color .3s;cursor:grab;user-select:none;-webkit-user-select:none}
+.zone:active{cursor:grabbing}
 .zone.fb-mode{border-color:var(--accent2);box-shadow:inset 0 0 0 1px var(--accent2),0 0 24px var(--accent-glow)}
 .zone.success{border-color:var(--green)}
 
@@ -245,22 +246,23 @@ function createEngine(cfg){
     if(cfg.onModeChange) cfg.onModeChange(false);
   }
 
-  function onTS(e){
-    e.preventDefault();
-    const t=e.touches[0],r=cfg.zone.getBoundingClientRect();
-    ts={x:t.clientX-r.left,y:t.clientY-r.top,time:Date.now()};
-    tc={...ts};pts=[{x:ts.x,y:ts.y}];mx=0;rev=false;
+  // Core pointer logic — used by both touch and mouse handlers.
+  // Coords are in zone-local space (relative to zone top-left).
+  function clientToZone(cx,cy){
+    const r=cfg.zone.getBoundingClientRect();
+    return {x:cx-r.left,y:cy-r.top};
+  }
+  function doStart(x,y){
+    ts={x,y,time:Date.now()};
+    tc={...ts};pts=[{x,y}];mx=0;rev=false;
     cfg.trail.setAttribute('stroke','var(--accent2)');
-    cfg.trail.setAttribute('d',`M${ts.x} ${ts.y}`);
-    cfg.startDot.style.left=(ts.x-4)+'px';cfg.startDot.style.top=(ts.y-4)+'px';
+    cfg.trail.setAttribute('d',`M${x} ${y}`);
+    cfg.startDot.style.left=(x-4)+'px';cfg.startDot.style.top=(y-4)+'px';
     cfg.startDot.style.background='var(--accent2)';
     cfg.startDot.classList.add('show');
   }
-
-  function onTM(e){
-    e.preventDefault();if(!ts)return;
-    const t=e.touches[0],r=cfg.zone.getBoundingClientRect();
-    const x=t.clientX-r.left,y=t.clientY-r.top;
+  function doMove(x,y){
+    if(!ts)return;
     tc={x,y};
     const dx=x-ts.x,dy=y-ts.y,dist=Math.sqrt(dx*dx+dy*dy);
     if(dist>mx)mx=dist;
@@ -278,9 +280,8 @@ function createEngine(cfg){
       }
     }
   }
-
-  function onTE(e){
-    e.preventDefault();if(!ts)return;
+  function doEnd(){
+    if(!ts)return;
     const dx=tc.x-ts.x,dy=tc.y-ts.y;
     const dist=Math.sqrt(dx*dx+dy*dy),elapsed=Date.now()-ts.time;
     cfg.startDot.classList.remove('show');
@@ -338,6 +339,58 @@ function createEngine(cfg){
     ts=null;
   }
 
+  // Touch handlers (mobile) — untouched behavior, now delegate to do* helpers
+  let lastTouchTime=0;
+  function onTS(e){
+    e.preventDefault();
+    lastTouchTime=Date.now();
+    const t=e.touches[0];
+    const p=clientToZone(t.clientX,t.clientY);
+    doStart(p.x,p.y);
+  }
+  function onTM(e){
+    e.preventDefault();if(!ts)return;
+    lastTouchTime=Date.now();
+    const t=e.touches[0];
+    const p=clientToZone(t.clientX,t.clientY);
+    doMove(p.x,p.y);
+  }
+  function onTE(e){
+    e.preventDefault();if(!ts)return;
+    lastTouchTime=Date.now();
+    doEnd();
+  }
+
+  // Mouse handlers (PC) — share do* helpers with touch path.
+  // Guard against compat mouse events that some mobile browsers fire after touch.
+  let mouseDown=false;
+  function onMD(e){
+    if(e.button!==0)return;
+    if(Date.now()-lastTouchTime<600)return; // compat-mouse suppression
+    if(ts)return;
+    e.preventDefault();
+    mouseDown=true;
+    const p=clientToZone(e.clientX,e.clientY);
+    doStart(p.x,p.y);
+    document.addEventListener('mousemove',onMM);
+    document.addEventListener('mouseup',onMU);
+  }
+  function onMM(e){
+    if(!mouseDown||!ts)return;
+    e.preventDefault();
+    const p=clientToZone(e.clientX,e.clientY);
+    doMove(p.x,p.y);
+  }
+  function onMU(e){
+    if(!mouseDown)return;
+    mouseDown=false;
+    document.removeEventListener('mousemove',onMM);
+    document.removeEventListener('mouseup',onMU);
+    if(!ts)return;
+    e.preventDefault();
+    doEnd();
+  }
+
   function resolveMove(start,end){
     const w=cfg.zone.offsetWidth,h=cfg.zone.offsetHeight;
     const EDGE=parseInt(getComputedStyle(cfg.zone).getPropertyValue('--edge-size'))||80;
@@ -367,6 +420,7 @@ function createEngine(cfg){
   cfg.zone.addEventListener('touchmove',onTM,{passive:false});
   cfg.zone.addEventListener('touchend',onTE,{passive:false});
   cfg.zone.addEventListener('touchcancel',onTE,{passive:false});
+  cfg.zone.addEventListener('mousedown',onMD);
 
   return {
     isFBActive:()=>fbActive,
