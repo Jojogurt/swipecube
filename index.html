@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>SwipeCube</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;600;700;800&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0a0a0f;--surface:#14141f;--surface2:#1e1e2e;
+  --text:#e8e6f0;--text2:#8a879a;--text3:#55526a;
+  --accent:#6c5ce7;--accent2:#a29bfe;--accent-glow:rgba(108,92,231,0.3);
+  --red:#ff6b6b;--green:#51cf66;--amber:#fcc419;--blue:#339af0;
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;touch-action:none}
+.app{display:flex;flex-direction:column;height:100%;max-width:420px;margin:0 auto;position:relative}
+.logo{font-family:'Space Mono',monospace;font-size:18px;font-weight:700;letter-spacing:-0.5px}
+.logo span{color:var(--accent2)}
+
+/* ===== SHARED ZONE ===== */
+.zone{flex:1;position:relative;display:flex;align-items:center;justify-content:center;margin:6px 16px;border-radius:20px;background:var(--surface);border:1px solid var(--surface2);overflow:hidden;transition:border-color .3s}
+.zone.fb-mode{border-color:var(--accent2);box-shadow:inset 0 0 0 1px var(--accent2),0 0 24px var(--accent-glow)}
+.zone.success{border-color:var(--green)}
+
+.edge-zones{position:absolute;inset:0;pointer-events:none;z-index:1}
+.edge-zone{position:absolute;background:rgba(108,92,231,0.04);border:1px dashed var(--surface2)}
+.edge-top{top:0;left:0;right:0;height:60px}
+.edge-bottom{bottom:0;left:0;right:0;height:60px}
+.edge-left{left:0;top:60px;bottom:60px;width:60px}
+.edge-right{right:0;top:60px;bottom:60px;width:60px}
+.zone.fb-mode .edge-zone{background:rgba(162,155,254,0.08)}
+
+.zone-label{position:absolute;font-family:'Space Mono',monospace;font-size:13px;font-weight:700;z-index:2;pointer-events:none;opacity:0.7}
+.cube-preview{position:absolute;z-index:2;pointer-events:none}
+
+.fb-badge{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;padding:4px 10px;border-radius:12px;z-index:9;opacity:0;transition:opacity .2s;pointer-events:none}
+.fb-badge.show{opacity:1}
+.fb-timer{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);width:120px;height:3px;background:var(--surface2);border-radius:2px;overflow:hidden;opacity:0;transition:opacity .2s;z-index:9;pointer-events:none}
+.fb-timer.show{opacity:1}
+.fb-timer-bar{height:100%;background:var(--accent2);width:100%;transform-origin:left;animation:fbCount 2s linear forwards}
+@keyframes fbCount{to{transform:scaleX(0)}}
+
+.z-trail{position:absolute;pointer-events:none;z-index:5}
+.z-trail-line{stroke-linecap:round;stroke-linejoin:round;fill:none}
+.z-fb{position:absolute;z-index:10;display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none;opacity:0;transition:all .3s}
+.z-fb.show{opacity:1}
+.z-fb-move{font-family:'Space Mono',monospace;font-size:48px;font-weight:700;text-shadow:0 0 30px currentColor}
+.z-fb-type{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:1px}
+.start-dot{position:absolute;z-index:6;width:8px;height:8px;border-radius:50%;pointer-events:none;opacity:0;transition:opacity .15s}
+.start-dot.show{opacity:0.7}
+
+/* ===== TUTORIAL ===== */
+.tutorial{display:flex;flex-direction:column;height:100%}
+.tut-header{padding:14px 20px 6px;display:flex;justify-content:space-between;align-items:center}
+.skip-btn{font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:8px;font-family:'Outfit',sans-serif}
+.tut-progress{display:flex;gap:4px;padding:8px 20px}
+.tut-pip{flex:1;height:3px;border-radius:2px;background:var(--surface2);transition:all .4s}
+.tut-pip.done{background:var(--green)}
+.tut-pip.active{background:var(--accent2)}
+.tut-content{padding:10px 24px;text-align:center}
+.tut-step-num{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:2px;font-weight:600;margin-bottom:4px}
+.tut-title{font-family:'Space Mono',monospace;font-size:20px;font-weight:700;margin-bottom:6px}
+.tut-desc{font-size:13px;color:var(--text2);line-height:1.4}
+.tut-counter{padding:6px 20px;text-align:center;font-size:12px;color:var(--text3)}
+.tut-counter b{color:var(--green);font-weight:700}
+.tut-bottom{padding:8px 20px 20px}
+.tut-next-btn{width:100%;padding:14px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-family:'Outfit',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;opacity:0.3;pointer-events:none}
+.tut-next-btn.ready{opacity:1;pointer-events:auto}
+.tut-next-btn:active{transform:scale(0.97)}
+.hand-hint{position:absolute;z-index:3;pointer-events:none;opacity:0.7}
+.hand-dot{width:22px;height:22px;border-radius:50%;background:var(--accent2);box-shadow:0 0 20px var(--accent-glow)}
+
+/* ===== GAME ===== */
+.game{display:none;flex-direction:column;height:100%}
+.game-header{padding:12px 16px 4px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.help-btn{font-size:12px;color:var(--text3);background:var(--surface);border:1px solid var(--surface2);border-radius:8px;padding:5px 10px;cursor:pointer;font-family:'Space Mono',monospace;font-weight:700}
+.mode-tabs{display:flex;gap:3px;background:var(--surface);border-radius:10px;padding:3px}
+.mode-tab{font-size:11px;font-weight:600;padding:6px 10px;border-radius:8px;border:none;background:none;color:var(--text3);cursor:pointer;transition:all .2s;font-family:'Outfit',sans-serif}
+.mode-tab.active{background:var(--accent);color:#fff}
+
+.algo-bar{padding:8px 20px 4px;min-height:52px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.algo-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:600}
+.algo-moves{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.algo-move{font-family:'Space Mono',monospace;font-size:16px;font-weight:700;min-width:34px;height:34px;padding:0 6px;display:flex;align-items:center;justify-content:center;border-radius:7px;background:var(--surface);border:1px solid var(--surface2);color:var(--text2);transition:all .25s}
+.algo-move.done{border-color:var(--green);color:var(--green);background:rgba(81,207,102,0.08);transform:scale(0.9)}
+.algo-move.current{border-color:var(--accent2);color:var(--accent2);background:rgba(162,155,254,0.1);transform:scale(1.1);box-shadow:0 0 16px var(--accent-glow)}
+.algo-move.wrong{border-color:var(--red);color:var(--red);background:rgba(255,107,107,0.1);animation:shake .4s}
+.algo-move.hidden{color:var(--surface);border-color:var(--surface2)}
+@keyframes shake{20%,60%{transform:translateX(-4px)}40%,80%{transform:translateX(4px)}}
+
+.stats{display:flex;justify-content:center;gap:20px;padding:4px 20px}
+.stat{text-align:center}
+.stat-val{font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:var(--accent2)}
+.stat-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px}
+.diff-bar{padding:0 20px 4px;display:flex;align-items:center;gap:8px;justify-content:center}
+.diff-dots{display:flex;gap:4px}
+.diff-dot{width:8px;height:8px;border-radius:50%;background:var(--surface2);transition:all .3s}
+.diff-label{font-size:11px;color:var(--text3)}
+
+.log{padding:4px 20px;display:flex;gap:4px;justify-content:center;flex-wrap:wrap;min-height:32px;align-items:center}
+.log-move{font-family:'Space Mono',monospace;font-size:13px;font-weight:700;padding:3px 7px;border-radius:6px;animation:popIn .2s ease-out}
+@keyframes popIn{from{transform:scale(0.5);opacity:0}to{transform:scale(1);opacity:1}}
+.controls{padding:6px 16px 16px;display:flex;gap:8px}
+.btn{flex:1;padding:12px;border-radius:12px;border:1px solid var(--surface2);background:var(--surface);color:var(--text);font-family:'Outfit',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn:active{transform:scale(0.97)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* Win overlay */
+.win-overlay{position:absolute;inset:0;background:rgba(10,10,15,0.9);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:20;gap:16px}
+.win-overlay.show{display:flex;animation:popIn .3s}
+.win-title{font-family:'Space Mono',monospace;font-size:32px;font-weight:700;color:var(--green)}
+.win-time{font-size:14px;color:var(--text2)}
+</style>
+</head>
+<body>
+
+<!-- TUTORIAL -->
+<div class="app tutorial" id="tutScreen">
+  <div class="tut-header">
+    <div class="logo">Swipe<span>Cube</span></div>
+    <button class="skip-btn" onclick="skipTut()">Pomiń →</button>
+  </div>
+  <div class="tut-progress" id="tutProg"></div>
+  <div class="tut-content">
+    <div class="tut-step-num" id="tutNum"></div>
+    <div class="tut-title" id="tutTitle"></div>
+    <div class="tut-desc" id="tutDesc"></div>
+  </div>
+  <div class="zone" id="tutZone">
+    <div class="edge-zones">
+      <div class="edge-zone edge-top"></div>
+      <div class="edge-zone edge-bottom"></div>
+      <div class="edge-zone edge-left"></div>
+      <div class="edge-zone edge-right"></div>
+    </div>
+    <div id="tutLabels"></div>
+    <div class="cube-preview" id="tutCube"></div>
+    <div class="hand-hint" id="handHint"><div class="hand-dot"></div></div>
+    <div class="fb-badge" id="tutFbBadge">F/B MODE</div>
+    <div class="fb-timer" id="tutFbTimer"><div class="fb-timer-bar"></div></div>
+    <svg class="z-trail" width="100%" height="100%"><path class="z-trail-line" id="tutTrail" stroke-width="3"/></svg>
+    <div class="z-fb" id="tutFb"><div class="z-fb-move" id="tutFbMove"></div><div class="z-fb-type" id="tutFbType"></div></div>
+    <div class="start-dot" id="tutStartDot"></div>
+  </div>
+  <div class="tut-counter" id="tutCount"></div>
+  <div class="tut-bottom"><button class="tut-next-btn" id="tutBtn" onclick="tutNext()">Dalej</button></div>
+</div>
+
+<!-- GAME -->
+<div class="app game" id="gameScreen">
+  <div class="game-header">
+    <div class="logo">Swipe<span>Cube</span></div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button class="help-btn" onclick="showTut()">?</button>
+      <div class="mode-tabs">
+        <button class="mode-tab active" onclick="setMode('learn')">Nauka</button>
+        <button class="mode-tab" onclick="setMode('memory')">Pamięć</button>
+        <button class="mode-tab" onclick="setMode('free')">Free</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="algo-bar">
+    <div class="algo-label" id="algoLabel">Algorytm</div>
+    <div class="algo-moves" id="algoMoves"></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-val" id="sCorrect">0</div><div class="stat-label">Wykonane</div></div>
+    <div class="stat"><div class="stat-val" id="sStreak">0</div><div class="stat-label">Streak</div></div>
+    <div class="stat"><div class="stat-val" id="sTime">0.0s</div><div class="stat-label">Czas</div></div>
+  </div>
+
+  <div class="diff-bar">
+    <div class="diff-dots" id="diffDots"></div>
+    <div class="diff-label" id="diffLabel"></div>
+  </div>
+
+  <div class="zone" id="gameZone">
+    <div class="edge-zones">
+      <div class="edge-zone edge-top"></div>
+      <div class="edge-zone edge-bottom"></div>
+      <div class="edge-zone edge-left"></div>
+      <div class="edge-zone edge-right"></div>
+    </div>
+    <div id="gameLabels"></div>
+    <div class="cube-preview" id="gameCube"></div>
+    <div class="fb-badge" id="gameFbBadge">F/B MODE</div>
+    <div class="fb-timer" id="gameFbTimer"><div class="fb-timer-bar"></div></div>
+    <svg class="z-trail" width="100%" height="100%"><path class="z-trail-line" id="gameTrail" stroke-width="3"/></svg>
+    <div class="z-fb" id="gameFb"><div class="z-fb-move" id="gameFbMove"></div><div class="z-fb-type" id="gameFbType"></div></div>
+    <div class="start-dot" id="gameStartDot"></div>
+    <div class="win-overlay" id="winOverlay">
+      <div class="win-title" id="winTitle">✓ Gotowe!</div>
+      <div class="win-time" id="winTime"></div>
+    </div>
+  </div>
+
+  <div class="log" id="log"></div>
+
+  <div class="controls">
+    <button class="btn" onclick="resetAlgo()">Reset</button>
+    <button class="btn primary" onclick="nextAlgo()">Następny</button>
+  </div>
+</div>
+
+<script>
+const MC={R:'#339af0',L:'#ff6b9d',U:'#51cf66',D:'#fcc419',F:'#a29bfe',B:'#20c997'};
+const getBase=m=>m.replace("'","").replace("2","");
+const X2_WINDOW=400;
+const FB_TIMEOUT=2000;
+
+// ============ GESTURE ENGINE (shared) ============
+function createEngine(cfg){
+  // cfg = {zone, trail, startDot, feedback, fbMove, fbType, fbBadge, fbTimer, labels, onMove}
+  let ts=null,tc=null,pts=[],mx=0,rev=false;
+  let lastMove=null,lastMoveTime=0;
+  let fbActive=false,fbTm=null;
+
+  function enterFB(){
+    fbActive=true;
+    cfg.zone.classList.add('fb-mode');
+    cfg.fbBadge.classList.add('show');
+    cfg.fbTimer.classList.add('show');
+    // Restart the timer bar animation
+    const bar=cfg.fbTimer.querySelector('.fb-timer-bar');
+    bar.style.animation='none';
+    void bar.offsetWidth;
+    bar.style.animation='fbCount 2s linear forwards';
+    if(fbTm)clearTimeout(fbTm);
+    fbTm=setTimeout(exitFB,FB_TIMEOUT);
+    if(cfg.onModeChange) cfg.onModeChange(true);
+  }
+  function exitFB(){
+    fbActive=false;
+    cfg.zone.classList.remove('fb-mode');
+    cfg.fbBadge.classList.remove('show');
+    cfg.fbTimer.classList.remove('show');
+    if(fbTm){clearTimeout(fbTm);fbTm=null;}
+    if(cfg.onModeChange) cfg.onModeChange(false);
+  }
+
+  function onTS(e){
+    e.preventDefault();
+    const t=e.touches[0],r=cfg.zone.getBoundingClientRect();
+    ts={x:t.clientX-r.left,y:t.clientY-r.top,time:Date.now()};
+    tc={...ts};pts=[{x:ts.x,y:ts.y}];mx=0;rev=false;
+    cfg.trail.setAttribute('stroke','var(--accent2)');
+    cfg.trail.setAttribute('d',`M${ts.x} ${ts.y}`);
+    cfg.startDot.style.left=(ts.x-4)+'px';cfg.startDot.style.top=(ts.y-4)+'px';
+    cfg.startDot.style.background='var(--accent2)';
+    cfg.startDot.classList.add('show');
+  }
+
+  function onTM(e){
+    e.preventDefault();if(!ts)return;
+    const t=e.touches[0],r=cfg.zone.getBoundingClientRect();
+    const x=t.clientX-r.left,y=t.clientY-r.top;
+    tc={x,y};
+    const dx=x-ts.x,dy=y-ts.y,dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist>mx)mx=dist;
+    pts.push({x,y});if(pts.length>40)pts.shift();
+    let d=`M${pts[0].x} ${pts[0].y}`;
+    for(let i=1;i<pts.length;i++)d+=` L${pts[i].x} ${pts[i].y}`;
+    cfg.trail.setAttribute('d',d);
+
+    if(dist>20){
+      const m=resolveMove(ts,tc,false);
+      if(m){
+        const c=m.includes('2')?'#ff922b':m.includes("'")?'#ff6b6b':MC[getBase(m)]||'var(--accent2)';
+        cfg.trail.setAttribute('stroke',c);
+        cfg.startDot.style.background=c;
+      }
+    }
+  }
+
+  function onTE(e){
+    e.preventDefault();if(!ts)return;
+    const dx=tc.x-ts.x,dy=tc.y-ts.y;
+    const dist=Math.sqrt(dx*dx+dy*dy),elapsed=Date.now()-ts.time;
+    cfg.startDot.classList.remove('show');
+    setTimeout(()=>{cfg.trail.setAttribute('d','');pts=[];},150);
+
+    // TAP
+    if(dist<15&&elapsed<300){
+      if(fbActive) exitFB();
+      else enterFB();
+      ts=null;return;
+    }
+
+    // SWIPE
+    if(dist>25){
+      // Rule 2: if swipe is in center (not on edge) while in FB mode, exit FB mode (no move fires)
+      const move=resolveMove(ts,tc);
+      if(!move){
+        if(fbActive) exitFB(); // swipe somewhere invalid cancels FB
+        ts=null;return;
+      }
+
+      let finalMove=move;
+      const now=Date.now();
+      if(lastMove===move && (now-lastMoveTime)<X2_WINDOW && !move.includes('2')){
+        finalMove=getBase(move)+'2';
+      }
+
+      // After fire, exit FB if we were in it
+      const wasInFB=fbActive;
+      if(fbActive) exitFB();
+
+      // Determine if we should replace last log entry (x2 upgrade)
+      const isX2Upgrade = finalMove.includes('2') && move === lastMove;
+
+      lastMove=finalMove;
+      lastMoveTime=now;
+
+      cfg.onMove(finalMove, {wasInFB, isX2Upgrade, baseMove:move});
+    }
+    ts=null;
+  }
+
+  function resolveMove(start,end){
+    const w=cfg.zone.offsetWidth,h=cfg.zone.offsetHeight;
+    const EDGE=80;
+    const inTop=start.y<EDGE;
+    const inBot=start.y>h-EDGE;
+    const inLeft=start.x<EDGE;
+    const inRight=start.x>w-EDGE;
+    const dx=end.x-start.x,dy=end.y-start.y;
+    const horiz=Math.abs(dx)>Math.abs(dy);
+    const vert=!horiz;
+
+    if(fbActive){
+      if(inRight&&vert) return dy<0?'F':"F'";
+      if(inLeft&&vert) return dy>0?'F':"F'";
+      if(inTop&&horiz) return dx<0?'B':"B'";
+      if(inBot&&horiz) return dx>0?'B':"B'";
+      return null;
+    }
+    if(inRight&&vert) return dy<0?'R':"R'";
+    if(inLeft&&vert) return dy>0?'L':"L'";
+    if(inTop&&horiz) return dx<0?'U':"U'";
+    if(inBot&&horiz) return dx>0?'D':"D'";
+    return null;
+  }
+
+  cfg.zone.addEventListener('touchstart',onTS,{passive:false});
+  cfg.zone.addEventListener('touchmove',onTM,{passive:false});
+  cfg.zone.addEventListener('touchend',onTE,{passive:false});
+  cfg.zone.addEventListener('touchcancel',onTE,{passive:false});
+
+  return {
+    isFBActive:()=>fbActive,
+    reset:()=>{lastMove=null;lastMoveTime=0;if(fbActive)exitFB();}
+  };
+}
+
+function showFeedback(move, type, fbMoveEl, fbTypeEl, fbEl) {
+  const base=getBase(move);
+  const color=move.includes('2')?'#ff922b':move.includes("'")?'#ff6b6b':MC[base]||'#aaa';
+  fbMoveEl.textContent=move;fbMoveEl.style.color=color;
+  fbTypeEl.textContent=type;
+  fbEl.classList.add('show');
+  if(navigator.vibrate)navigator.vibrate(30);
+  setTimeout(()=>fbEl.classList.remove('show'),600);
+}
+
+function getMoveType(move, wasInFB, isX2) {
+  if(isX2) return 'powtórka ×2';
+  if(move.startsWith('F')||move.startsWith('B')) return 'tryb F/B';
+  if(move.includes("'")) return 'krawędź — odwrót';
+  return 'krawędź';
+}
+
+// Render edge labels based on current FB mode
+function renderZoneLabels(labelsEl, zoneEl, cubeEl, fbActive){
+  labelsEl.innerHTML='';
+  const w=zoneEl.offsetWidth, h=zoneEl.offsetHeight;
+  const cx=w/2, cy=h/2;
+
+  let labels;
+  if(fbActive){
+    labels=[
+      {t:'F ↑',x:w-30,y:cy-30,c:MC.F},
+      {t:"F' ↓",x:w-30,y:cy+30,c:'#ff6b6b'},
+      {t:'F ↓',x:30,y:cy+30,c:MC.F},
+      {t:"F' ↑",x:30,y:cy-30,c:'#ff6b6b'},
+      {t:'B ←',x:cx-40,y:30,c:MC.B},
+      {t:"B' →",x:cx+40,y:30,c:'#ff6b6b'},
+      {t:'B →',x:cx+40,y:h-30,c:MC.B},
+      {t:"B' ←",x:cx-40,y:h-30,c:'#ff6b6b'},
+    ];
+  } else {
+    labels=[
+      {t:'R ↑',x:w-30,y:cy-30,c:MC.R},
+      {t:"R' ↓",x:w-30,y:cy+30,c:'#ff6b6b'},
+      {t:'L ↓',x:30,y:cy+30,c:MC.L},
+      {t:"L' ↑",x:30,y:cy-30,c:'#ff6b6b'},
+      {t:'U ←',x:cx-40,y:30,c:MC.U},
+      {t:"U' →",x:cx+40,y:30,c:'#ff6b6b'},
+      {t:'D →',x:cx+40,y:h-30,c:MC.D},
+      {t:"D' ←",x:cx-40,y:h-30,c:'#ff6b6b'},
+    ];
+  }
+  labels.forEach(l=>{
+    const s=document.createElement('div');
+    s.className='zone-label';
+    s.style.cssText=`left:${l.x}px;top:${l.y}px;transform:translate(-50%,-50%);color:${l.c}`;
+    s.textContent=l.t;
+    labelsEl.appendChild(s);
+  });
+
+  // Cube hint
+  if(cubeEl){
+    cubeEl.style.cssText=`left:${cx-30}px;top:${cy-30}px;width:60px;height:60px`;
+    const hintText = fbActive ? 'tap aby wrócić' : 'tap → F/B';
+    const hintColor = fbActive ? '#a29bfe' : '#55526a';
+    cubeEl.innerHTML=`
+      <svg width="60" height="60" viewBox="0 0 60 60" style="opacity:${fbActive?0.3:0.15}">
+        <rect x="10" y="10" width="40" height="40" fill="none" stroke="${fbActive?'#a29bfe':'#fff'}" stroke-width="1"/>
+        <line x1="10" y1="23" x2="50" y2="23" stroke="${fbActive?'#a29bfe':'#fff'}" stroke-width="0.5"/>
+        <line x1="10" y1="37" x2="50" y2="37" stroke="${fbActive?'#a29bfe':'#fff'}" stroke-width="0.5"/>
+        <line x1="23" y1="10" x2="23" y2="50" stroke="${fbActive?'#a29bfe':'#fff'}" stroke-width="0.5"/>
+        <line x1="37" y1="10" x2="37" y2="50" stroke="${fbActive?'#a29bfe':'#fff'}" stroke-width="0.5"/>
+      </svg>
+      <div style="position:absolute;top:62px;left:50%;transform:translateX(-50%);font-size:10px;color:${hintColor};font-family:'Space Mono',monospace;white-space:nowrap">${hintText}</div>
+    `;
+  }
+}
+
+// ============ TUTORIAL ============
+const TUT_STEPS=[
+  {
+    title:'Krawędzie ekranu',
+    desc:'Każda krawędź odpowiada jednej ścianie kostki. Przesuń palec na prawej krawędzi w górę lub w dół — to R i R\'.',
+    ok:m=>(m==='R'||m==="R'"),
+    need:2,
+    hint:{edge:'right',dir:'vertical'}
+  },
+  {
+    title:'Wszystkie 4 strony',
+    desc:'Tak samo działają pozostałe krawędzie. Lewa = L, górna = U, dolna = D. Wykonaj cztery różne ruchy (mogą być prime, L i L\' liczą się osobno).',
+    ok:m=>(['L','U','D',"L'","U'","D'"].includes(m)),
+    need:4,
+    matchUnique:true,
+    hint:null
+  },
+  {
+    title:'Tap = tryb F/B',
+    desc:'Tapnij gdziekolwiek — włączysz tryb F/B na 2 sekundy. Te same krawędzie zadziałają wtedy jako F lub B.',
+    ok:m=>(m.startsWith('F')||m.startsWith('B')),
+    need:2,
+    hint:{type:'tap'}
+  },
+  {
+    title:'×2 przez powtórkę',
+    desc:'Wykonaj ten sam ruch dwa razy pod rząd w ciągu 400ms — system automatycznie zamieni to na ×2 (pół obrotu).',
+    ok:m=>m.includes('2'),
+    need:2,
+    hint:null
+  },
+];
+
+let tIdx=0, tHits=0, tMatched=new Set();
+let tutEngine=null;
+
+function initTut(){
+  tIdx=0;
+  renderTStep();
+  tutEngine=createEngine({
+    zone:document.getElementById('tutZone'),
+    trail:document.getElementById('tutTrail'),
+    startDot:document.getElementById('tutStartDot'),
+    feedback:document.getElementById('tutFb'),
+    fbMove:document.getElementById('tutFbMove'),
+    fbType:document.getElementById('tutFbType'),
+    fbBadge:document.getElementById('tutFbBadge'),
+    fbTimer:document.getElementById('tutFbTimer'),
+    onModeChange:(active)=>{
+      renderZoneLabels(
+        document.getElementById('tutLabels'),
+        document.getElementById('tutZone'),
+        document.getElementById('tutCube'),
+        active
+      );
+    },
+    onMove:(move, meta)=>{
+      const type=getMoveType(move, meta.wasInFB, meta.isX2Upgrade);
+      showFeedback(move, type,
+        document.getElementById('tutFbMove'),
+        document.getElementById('tutFbType'),
+        document.getElementById('tutFb')
+      );
+      // Accept logic
+      const s=TUT_STEPS[tIdx];
+      if(!s.ok(move))return;
+      if(s.matchUnique){
+        // Require different moves (full move name, so L and L' count separately)
+        if(tMatched.has(move))return;
+        tMatched.add(move);
+      }
+      tHits++;
+      updateTCount();
+      if(tHits>=s.need) markReady();
+    }
+  });
+  // initial labels
+  requestAnimationFrame(()=>{
+    renderZoneLabels(
+      document.getElementById('tutLabels'),
+      document.getElementById('tutZone'),
+      document.getElementById('tutCube'),
+      false
+    );
+  });
+}
+
+function renderTStep(){
+  const s=TUT_STEPS[tIdx];
+  tHits=0;tMatched=new Set();
+  document.getElementById('tutProg').innerHTML=TUT_STEPS.map((_,i)=>
+    `<div class="tut-pip ${i<tIdx?'done':i===tIdx?'active':''}"></div>`
+  ).join('');
+  document.getElementById('tutNum').textContent=`Krok ${tIdx+1} z ${TUT_STEPS.length}`;
+  document.getElementById('tutTitle').textContent=s.title;
+  document.getElementById('tutDesc').textContent=s.desc;
+  document.getElementById('tutBtn').classList.remove('ready');
+  document.getElementById('tutBtn').textContent='Dalej';
+  document.getElementById('tutZone').classList.remove('success');
+  if(tutEngine)tutEngine.reset();
+  updateTCount();
+}
+
+function updateTCount(){
+  const r=TUT_STEPS[tIdx].need-tHits;
+  document.getElementById('tutCount').innerHTML=r>0
+    ?`Wykonaj jeszcze <b>${r}</b> ${r===1?'raz':'razy'}`
+    :`<b>Gotowe!</b>`;
+}
+
+function markReady(){
+  document.getElementById('tutBtn').classList.add('ready');
+  document.getElementById('tutZone').classList.add('success');
+  if(tIdx===TUT_STEPS.length-1)document.getElementById('tutBtn').textContent='Zaczynamy!';
+}
+
+function tutNext(){
+  if(tHits<TUT_STEPS[tIdx].need)return;
+  tIdx++;
+  if(tIdx>=TUT_STEPS.length){startGame();return;}
+  renderTStep();
+}
+function skipTut(){startGame();}
+function showTut(){
+  document.getElementById('gameScreen').style.display='none';
+  document.getElementById('tutScreen').style.display='flex';
+  tIdx=0;renderTStep();
+}
+
+// ============ GAME ============
+const ALGOS=[
+  {name:"Sexy Move",moves:["R","U","R'","U'"],diff:0},
+  {name:"Sledgehammer",moves:["R'","F","R","F'"],diff:0},
+  {name:"Basic insert",moves:["U","R","U'","R'"],diff:0},
+  {name:"Quick combo",moves:["R","U","R'","D'"],diff:0},
+
+  {name:"Sune",moves:["R","U","R'","U","R","U2","R'"],diff:1},
+  {name:"Double Sexy",moves:["R","U","R'","U'","R","U","R'","U'"],diff:1},
+  {name:"F2L #1",moves:["U'","F'","U","F"],diff:1},
+  {name:"Hedgeslayer",moves:["F","R","U","R'","U'","F'"],diff:1},
+
+  {name:"Anti-Sune",moves:["R","U2","R'","U'","R","U'","R'"],diff:2},
+  {name:"T-Perm (part)",moves:["R","U","R'","U'","R'","F","R","F'"],diff:2},
+  {name:"J-Perm (part)",moves:["R","U","R'","F'","R","U","R'","U'"],diff:2},
+
+  {name:"Y-Perm Start",moves:["F","R","U'","R'","U'","R","U","R'","F'"],diff:3},
+  {name:"Niklas",moves:["R","U'","L'","U","R'","U'","L"],diff:3},
+];
+const DIFFS=[
+  {l:'Podstawowe',c:'#51cf66'},
+  {l:'Proste',c:'#fcc419'},
+  {l:'Średnie',c:'#ff922b'},
+  {l:'Zaawansowane',c:'#ff6b6b'},
+];
+
+let mode='learn', cAlgo=null, cStep=0, iLog=[], st={c:0,s:0}, tStart=0, tInt=null, memoryHidden=false;
+let gameEngine=null;
+
+function startGame(){
+  document.getElementById('tutScreen').style.display='none';
+  document.getElementById('gameScreen').style.display='flex';
+  document.getElementById('diffDots').innerHTML=DIFFS.map((_,i)=>`<div class="diff-dot" id="dd${i}"></div>`).join('');
+
+  gameEngine=createEngine({
+    zone:document.getElementById('gameZone'),
+    trail:document.getElementById('gameTrail'),
+    startDot:document.getElementById('gameStartDot'),
+    feedback:document.getElementById('gameFb'),
+    fbMove:document.getElementById('gameFbMove'),
+    fbType:document.getElementById('gameFbType'),
+    fbBadge:document.getElementById('gameFbBadge'),
+    fbTimer:document.getElementById('gameFbTimer'),
+    onModeChange:(active)=>{
+      renderZoneLabels(
+        document.getElementById('gameLabels'),
+        document.getElementById('gameZone'),
+        document.getElementById('gameCube'),
+        active
+      );
+    },
+    onMove:(move, meta)=>{
+      const type=getMoveType(move, meta.wasInFB, meta.isX2Upgrade);
+      showFeedback(move, type,
+        document.getElementById('gameFbMove'),
+        document.getElementById('gameFbType'),
+        document.getElementById('gameFb')
+      );
+
+      // Handle x2 upgrade in log (replace last entry)
+      if(meta.isX2Upgrade && iLog.length>0 && iLog[iLog.length-1]===meta.baseMove){
+        iLog.pop();
+        // Also undo last step in algo verification
+        if(mode!=='free' && cStep>0 && cAlgo && cAlgo.moves[cStep-1]===meta.baseMove){
+          cStep--;
+        }
+      }
+
+      iLog.push(move);
+      renderLog();
+
+      if(mode==='free'||!cAlgo)return;
+      const expected=cAlgo.moves[cStep];
+      if(move===expected){
+        cStep++;renderAlgo();
+        if(cStep>=cAlgo.moves.length){
+          clearInterval(tInt);
+          st.c++;st.s++;
+          document.getElementById('sCorrect').textContent=st.c;
+          document.getElementById('sStreak').textContent=st.s;
+          // Show win
+          const t=((Date.now()-tStart)/1000).toFixed(1);
+          document.getElementById('winTime').textContent=`${t}s`;
+          document.getElementById('winOverlay').classList.add('show');
+          setTimeout(()=>{
+            document.getElementById('winOverlay').classList.remove('show');
+            nextAlgo();
+          },1400);
+        }
+      } else {
+        st.s=0;
+        document.getElementById('sStreak').textContent=0;
+        const el=document.querySelectorAll('.algo-move')[cStep];
+        if(el){el.classList.add('wrong');setTimeout(()=>el.classList.remove('wrong'),500);}
+      }
+    }
+  });
+
+  // Initial labels
+  requestAnimationFrame(()=>{
+    renderZoneLabels(
+      document.getElementById('gameLabels'),
+      document.getElementById('gameZone'),
+      document.getElementById('gameCube'),
+      false
+    );
+  });
+
+  nextAlgo();
+}
+
+function setMode(m){
+  mode=m;
+  document.querySelectorAll('.mode-tab').forEach(t=>{
+    const lb=t.textContent.toLowerCase();
+    t.classList.toggle('active',
+      (m==='learn'&&lb==='nauka')||(m==='memory'&&lb==='pamięć')||(m==='free'&&lb==='free'));
+  });
+  if(m==='free'){
+    document.getElementById('algoLabel').textContent='Tryb swobodny';
+    document.getElementById('algoMoves').innerHTML='';
+    iLog=[];renderLog();
+    clearInterval(tInt);
+    document.getElementById('sTime').textContent='0.0s';
+  } else nextAlgo();
+}
+
+function nextAlgo(){
+  if(mode==='free')return;
+  const pool=ALGOS.filter(a=>mode==='learn'||a.diff<=2);
+  cAlgo=pool[Math.floor(Math.random()*pool.length)];
+  cStep=0;iLog=[];memoryHidden=false;
+  renderAlgo();renderLog();
+  if(gameEngine)gameEngine.reset();
+  clearInterval(tInt);tStart=Date.now();
+  tInt=setInterval(()=>{
+    document.getElementById('sTime').textContent=((Date.now()-tStart)/1000).toFixed(1)+'s';
+  },100);
+  const di=cAlgo.diff;
+  DIFFS.forEach((_,i)=>{
+    document.getElementById('dd'+i).style.background=i<=di?DIFFS[di].c:'var(--surface2)';
+  });
+  document.getElementById('diffLabel').textContent=DIFFS[di].l;
+  if(mode==='memory'){
+    const showTime=Math.min(1200+cAlgo.moves.length*400,4500);
+    setTimeout(()=>{
+      memoryHidden=true;
+      renderAlgo();
+      document.getElementById('algoLabel').textContent='Zapamiętaj i odtwórz!';
+    },showTime);
+  }
+}
+
+function resetAlgo(){
+  if(mode==='free'){iLog=[];renderLog();return;}
+  cStep=0;iLog=[];renderAlgo();renderLog();
+  if(gameEngine)gameEngine.reset();
+  clearInterval(tInt);tStart=Date.now();
+  tInt=setInterval(()=>{
+    document.getElementById('sTime').textContent=((Date.now()-tStart)/1000).toFixed(1)+'s';
+  },100);
+}
+
+function renderAlgo(){
+  if(!cAlgo)return;
+  document.getElementById('algoLabel').textContent=cAlgo.name;
+  document.getElementById('algoMoves').innerHTML=cAlgo.moves.map((m,i)=>{
+    let cls='';
+    if(i<cStep)cls='done';
+    else if(i===cStep)cls='current';
+    if(memoryHidden && i>=cStep) cls+=' hidden';
+    return`<div class="algo-move ${cls}">${m}</div>`;
+  }).join('');
+}
+
+function renderLog(){
+  document.getElementById('log').innerHTML=iLog.slice(-10).map(m=>{
+    const base=getBase(m);
+    const c=m.includes('2')?'#ff922b':m.includes("'")?'#ff6b6b':MC[base]||'#888';
+    return`<span class="log-move" style="background:${c}22;color:${c}">${m}</span>`;
+  }).join('');
+}
+
+// Start
+initTut();
+</script>
+</body>
+</html>
