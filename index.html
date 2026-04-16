@@ -14,7 +14,8 @@
   --red:#ff6b6b;--green:#51cf66;--amber:#fcc419;--blue:#339af0;
 }
 html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;touch-action:none}
-.app{display:flex;flex-direction:column;height:100%;max-width:420px;margin:0 auto;position:relative}
+.app{--edge-size:90px;display:flex;flex-direction:column;height:100%;max-width:420px;margin:0 auto;position:relative}
+.app.compact{--edge-size:100px}
 .logo{font-family:'Space Mono',monospace;font-size:18px;font-weight:700;letter-spacing:-0.5px}
 .logo span{color:var(--accent2)}
 
@@ -25,10 +26,10 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 
 .edge-zones{position:absolute;inset:0;pointer-events:none;z-index:1}
 .edge-zone{position:absolute;background:rgba(108,92,231,0.04);border:1px dashed var(--surface2)}
-.edge-top{top:0;left:0;right:0;height:60px}
-.edge-bottom{bottom:0;left:0;right:0;height:60px}
-.edge-left{left:0;top:60px;bottom:60px;width:60px}
-.edge-right{right:0;top:60px;bottom:60px;width:60px}
+.edge-top{top:0;left:0;right:0;height:var(--edge-size)}
+.edge-bottom{bottom:0;left:0;right:0;height:var(--edge-size)}
+.edge-left{left:0;top:var(--edge-size);bottom:var(--edge-size);width:var(--edge-size)}
+.edge-right{right:0;top:var(--edge-size);bottom:var(--edge-size);width:var(--edge-size)}
 .zone.fb-mode .edge-zone{background:rgba(162,155,254,0.08)}
 
 .zone-label{position:absolute;font-family:'Space Mono',monospace;font-size:13px;font-weight:700;z-index:2;pointer-events:none;opacity:0.7}
@@ -74,7 +75,9 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 /* ===== GAME ===== */
 .game{display:none;flex-direction:column;height:100%}
 .game-header{padding:12px 16px 4px;display:flex;justify-content:space-between;align-items:center;gap:8px}
-.help-btn{font-size:12px;color:var(--text3);background:var(--surface);border:1px solid var(--surface2);border-radius:8px;padding:5px 10px;cursor:pointer;font-family:'Space Mono',monospace;font-weight:700}
+.help-btn{font-size:12px;color:var(--text3);background:var(--surface);border:1px solid var(--surface2);border-radius:8px;padding:5px 10px;cursor:pointer;font-family:'Space Mono',monospace;font-weight:700;transition:all .2s}
+.help-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+#gameScreen.compact .zone{flex:0 0 auto;height:40vh;min-height:260px;max-height:65%;margin-top:auto}
 .mode-tabs{display:flex;gap:3px;background:var(--surface);border-radius:10px;padding:3px}
 .mode-tab{font-size:11px;font-weight:600;padding:6px 10px;border-radius:8px;border:none;background:none;color:var(--text3);cursor:pointer;transition:all .2s;font-family:'Outfit',sans-serif}
 .mode-tab.active{background:var(--accent);color:#fff}
@@ -152,6 +155,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
   <div class="game-header">
     <div class="logo">Swipe<span>Cube</span></div>
     <div style="display:flex;gap:6px;align-items:center">
+      <button class="help-btn" id="compactBtn" onclick="toggleCompact()" title="Tryb jednej ręki">◱</button>
       <button class="help-btn" onclick="showTut()">?</button>
       <div class="mode-tabs">
         <button class="mode-tab active" onclick="setMode('learn')">Nauka</button>
@@ -304,9 +308,24 @@ function createEngine(cfg){
         finalMove=getBase(move)+'2';
       }
 
-      // After fire, exit FB if we were in it
+      // After fire, handle FB mode:
+      // - If we just fired an x2 (chained F/B), exit FB immediately
+      // - If first F/B swipe, keep FB alive briefly (X2 window) so user can chain for F2/B2
+      //   Pattern: tap → swipe → swipe = F2/B2 (one tap + two fast swipes)
       const wasInFB=fbActive;
-      if(fbActive) exitFB();
+      if(fbActive){
+        if(finalMove.includes('2')){
+          exitFB();
+        } else {
+          if(fbTm)clearTimeout(fbTm);
+          const graceMs=X2_WINDOW+100;
+          fbTm=setTimeout(exitFB,graceMs);
+          const bar=cfg.fbTimer.querySelector('.fb-timer-bar');
+          bar.style.animation='none';
+          void bar.offsetWidth;
+          bar.style.animation=`fbCount ${graceMs/1000}s linear forwards`;
+        }
+      }
 
       // Determine if we should replace last log entry (x2 upgrade)
       const isX2Upgrade = finalMove.includes('2') && move === lastMove;
@@ -321,7 +340,7 @@ function createEngine(cfg){
 
   function resolveMove(start,end){
     const w=cfg.zone.offsetWidth,h=cfg.zone.offsetHeight;
-    const EDGE=80;
+    const EDGE=parseInt(getComputedStyle(cfg.zone).getPropertyValue('--edge-size'))||80;
     const inTop=start.y<EDGE;
     const inBot=start.y>h-EDGE;
     const inLeft=start.x<EDGE;
@@ -557,6 +576,23 @@ function showTut(){
   tIdx=0;renderTStep();
 }
 
+function toggleCompact(){
+  const s=document.getElementById('gameScreen');
+  const b=document.getElementById('compactBtn');
+  const on=!s.classList.contains('compact');
+  s.classList.toggle('compact',on);
+  b.classList.toggle('active',on);
+  try{localStorage.setItem('swipecube_compact',on?'1':'0');}catch(e){}
+}
+function initCompactPref(){
+  try{
+    if(localStorage.getItem('swipecube_compact')==='1'){
+      document.getElementById('gameScreen').classList.add('compact');
+      document.getElementById('compactBtn').classList.add('active');
+    }
+  }catch(e){}
+}
+
 // ============ GAME ============
 const ALGOS=[
   {name:"Sexy Move",moves:["R","U","R'","U'"],diff:0},
@@ -665,6 +701,19 @@ function startGame(){
     );
   });
 
+  // Re-render labels when zone dimensions change (compact toggle, window resize)
+  const gz=document.getElementById('gameZone');
+  if(window.ResizeObserver){
+    new ResizeObserver(()=>{
+      renderZoneLabels(
+        document.getElementById('gameLabels'),
+        gz,
+        document.getElementById('gameCube'),
+        gameEngine?gameEngine.isFBActive():false
+      );
+    }).observe(gz);
+  }
+
   nextAlgo();
 }
 
@@ -741,6 +790,7 @@ function renderLog(){
 }
 
 // Start
+initCompactPref();
 initTut();
 </script>
 </body>
