@@ -92,6 +92,10 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .algo-move.wrong{border-color:var(--red);color:var(--red);background:rgba(255,107,107,0.1);animation:shake .4s}
 .algo-move.hidden{color:var(--surface);border-color:var(--surface2)}
 @keyframes shake{20%,60%{transform:translateX(-4px)}40%,80%{transform:translateX(4px)}}
+.mem-progress{height:3px;width:140px;background:var(--surface2);border-radius:2px;overflow:hidden;opacity:0;transition:opacity .2s}
+.mem-progress.show{opacity:1}
+.mem-progress-bar{height:100%;background:var(--accent2);width:100%;transform-origin:left;box-shadow:0 0 8px var(--accent-glow)}
+@keyframes memCount{from{transform:scaleX(1)}to{transform:scaleX(0)}}
 
 .stats{display:flex;justify-content:center;gap:20px;padding:4px 20px}
 .stat{text-align:center}
@@ -169,6 +173,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
   <div class="algo-bar">
     <div class="algo-label" id="algoLabel">Algorytm</div>
     <div class="algo-moves" id="algoMoves"></div>
+    <div class="mem-progress" id="memProgress"><div class="mem-progress-bar"></div></div>
   </div>
 
   <div class="stats">
@@ -673,7 +678,7 @@ const DIFFS=[
   {l:'Zaawansowane',c:'#ff6b6b'},
 ];
 
-let mode='learn', cAlgo=null, cStep=0, iLog=[], st={c:0,s:0}, tStart=0, tInt=null, memoryHidden=false;
+let mode='learn', cAlgo=null, cStep=0, iLog=[], st={c:0,s:0}, tStart=0, tInt=null, memoryHidden=false, memTimeout=null;
 let gameEngine=null;
 
 function startGame(){
@@ -787,45 +792,79 @@ function setMode(m){
   } else nextAlgo();
 }
 
+function startTimer(){
+  clearInterval(tInt);
+  tStart=Date.now();
+  document.getElementById('sTime').textContent='0.0s';
+  tInt=setInterval(()=>{
+    document.getElementById('sTime').textContent=((Date.now()-tStart)/1000).toFixed(1)+'s';
+  },100);
+}
+
+function startMemoryPhase(){
+  // Pause/reset gameplay timer until the sequence is hidden
+  clearInterval(tInt);tStart=0;
+  document.getElementById('sTime').textContent='0.0s';
+
+  if(memTimeout){clearTimeout(memTimeout);memTimeout=null;}
+  memoryHidden=false;
+  renderAlgo();
+
+  const showTime=Math.min(1200+cAlgo.moves.length*400,4500);
+  const prog=document.getElementById('memProgress');
+  const bar=prog.querySelector('.mem-progress-bar');
+  prog.classList.add('show');
+  bar.style.animation='none';
+  void bar.offsetWidth;
+  bar.style.animation=`memCount ${showTime/1000}s linear forwards`;
+
+  memTimeout=setTimeout(()=>{
+    memoryHidden=true;
+    renderAlgo();
+    prog.classList.remove('show');
+    startTimer();
+    memTimeout=null;
+  },showTime);
+}
+
 function nextAlgo(){
   if(mode==='free')return;
   const pool=ALGOS.filter(a=>mode==='learn'||a.diff<=2);
   cAlgo=pool[Math.floor(Math.random()*pool.length)];
   cStep=0;iLog=[];memoryHidden=false;
+  if(memTimeout){clearTimeout(memTimeout);memTimeout=null;}
+  document.getElementById('memProgress').classList.remove('show');
   renderAlgo();renderLog();
   if(gameEngine)gameEngine.reset();
-  clearInterval(tInt);tStart=Date.now();
-  tInt=setInterval(()=>{
-    document.getElementById('sTime').textContent=((Date.now()-tStart)/1000).toFixed(1)+'s';
-  },100);
+
   const di=cAlgo.diff;
   DIFFS.forEach((_,i)=>{
     document.getElementById('dd'+i).style.background=i<=di?DIFFS[di].c:'var(--surface2)';
   });
   document.getElementById('diffLabel').textContent=DIFFS[di].l;
-  if(mode==='memory'){
-    const showTime=Math.min(1200+cAlgo.moves.length*400,4500);
-    setTimeout(()=>{
-      memoryHidden=true;
-      renderAlgo();
-      document.getElementById('algoLabel').textContent='Zapamiętaj i odtwórz!';
-    },showTime);
-  }
+
+  if(mode==='memory') startMemoryPhase();
+  else startTimer();
 }
 
 function resetAlgo(){
   if(mode==='free'){iLog=[];renderLog();return;}
-  cStep=0;iLog=[];renderAlgo();renderLog();
+  cStep=0;iLog=[];
   if(gameEngine)gameEngine.reset();
-  clearInterval(tInt);tStart=Date.now();
-  tInt=setInterval(()=>{
-    document.getElementById('sTime').textContent=((Date.now()-tStart)/1000).toFixed(1)+'s';
-  },100);
+  if(mode==='memory'){
+    renderLog();
+    startMemoryPhase(); // re-show sequence, timer paused until hidden
+  } else {
+    memoryHidden=false;
+    renderAlgo();renderLog();
+    startTimer();
+  }
 }
 
 function renderAlgo(){
   if(!cAlgo)return;
-  document.getElementById('algoLabel').textContent=cAlgo.name;
+  const label=(mode==='memory'&&memoryHidden)?'Zapamiętaj i odtwórz!':cAlgo.name;
+  document.getElementById('algoLabel').textContent=label;
   document.getElementById('algoMoves').innerHTML=cAlgo.moves.map((m,i)=>{
     let cls='';
     if(i<cStep)cls='done';
