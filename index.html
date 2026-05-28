@@ -119,6 +119,11 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .win-overlay.show{display:flex;animation:popIn .3s}
 .win-title{font-family:'Space Mono',monospace;font-size:32px;font-weight:700;color:var(--green)}
 .win-time{font-size:14px;color:var(--text2)}
+.win-cube{width:min(240px,60vw);height:min(240px,60vw);touch-action:none}
+.win-cube canvas{display:block;border-radius:16px}
+.win-status{font-family:'Space Mono',monospace;font-size:13px;color:var(--accent2);text-align:center;padding:0 20px;letter-spacing:.5px}
+.win-next{flex:0 0 auto;width:auto;max-width:220px;padding:11px 30px}
+.win-hint{font-size:11px;color:var(--text3);margin-top:-6px}
 </style>
 </head>
 <body>
@@ -202,8 +207,12 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
     <div class="z-fb" id="gameFb"><div class="z-fb-move" id="gameFbMove"></div><div class="z-fb-type" id="gameFbType"></div></div>
     <div class="start-dot" id="gameStartDot"></div>
     <div class="win-overlay" id="winOverlay">
-      <div class="win-title" id="winTitle">✓ Gotowe!</div>
+      <div class="win-cube" id="winCube"></div>
+      <div class="win-status" id="winStatus"></div>
+      <div class="win-title" id="winTitle">✓ Ułożona!</div>
       <div class="win-time" id="winTime"></div>
+      <button class="btn primary win-next" id="winNext" onclick="finishWin()">Następny →</button>
+      <div class="win-hint" id="winHint">dotknij, aby pominąć</div>
     </div>
   </div>
 
@@ -215,11 +224,13 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 const MC={R:'#339af0',L:'#ff6b9d',U:'#51cf66',D:'#fcc419',F:'#a29bfe',B:'#20c997'};
 const getBase=m=>m.replace("'","").replace("2","");
 const X2_WINDOW=400;
 const FB_TIMEOUT=2000;
+let winActive=false, winTimeout=null;
 
 // ============ GESTURE ENGINE (shared) ============
 function createEngine(cfg){
@@ -348,6 +359,7 @@ function createEngine(cfg){
   let lastTouchTime=0;
   function onTS(e){
     e.preventDefault();
+    if(winActive)return;
     lastTouchTime=Date.now();
     const t=e.touches[0];
     const p=clientToZone(t.clientX,t.clientY);
@@ -371,6 +383,7 @@ function createEngine(cfg){
   let mouseDown=false;
   function onMD(e){
     if(e.button!==0)return;
+    if(winActive)return;
     if(Date.now()-lastTouchTime<600)return; // compat-mouse suppression
     if(ts)return;
     e.preventDefault();
@@ -732,14 +745,8 @@ function startGame(){
           st.c++;st.s++;
           document.getElementById('sCorrect').textContent=st.c;
           document.getElementById('sStreak').textContent=st.s;
-          // Show win
           const t=((Date.now()-tStart)/1000).toFixed(1);
-          document.getElementById('winTime').textContent=`${t}s`;
-          document.getElementById('winOverlay').classList.add('show');
-          setTimeout(()=>{
-            document.getElementById('winOverlay').classList.remove('show');
-            nextAlgo();
-          },1400);
+          celebrateWin(t, cAlgo.moves.slice());
         }
       } else {
         st.s=0;
@@ -881,6 +888,191 @@ function renderLog(){
     return`<span class="log-move" style="background:${c}22;color:${c}">${m}</span>`;
   }).join('');
 }
+
+// ============ 3D CUBE SOLVE SIMULATION (Three.js) ============
+// On win: rebuild a solved cube, scramble it INSTANTLY with the inverse of the
+// algorithm, then animate the algorithm forward. By construction the cube ends
+// perfectly solved — it literally "solves itself using exactly those moves".
+const CUBE_COLORS={R:0x339af0,L:0xff6b9d,U:0x51cf66,D:0xfcc419,F:0xa29bfe,B:0x20c997};
+const CUBE_DARK=0x14141f;
+let cube3d=null;   // {renderer,scene,camera,group,geo,cubies}
+let cubeRun=0;     // playback token — bumping it cancels any in-flight animation/spin
+
+function cubeReady(){return typeof THREE!=='undefined';}
+
+// Notation -> {axis,layer,angle}. cw=base sign for a clockwise (unprimed) quarter turn.
+function moveSpec(move){
+  const M={
+    R:{axis:'x',layer: 1,cw:-1}, L:{axis:'x',layer:-1,cw: 1},
+    U:{axis:'y',layer: 1,cw:-1}, D:{axis:'y',layer:-1,cw: 1},
+    F:{axis:'z',layer: 1,cw:-1}, B:{axis:'z',layer:-1,cw: 1},
+  }[move[0]];
+  const dbl=move.includes('2'), prime=move.includes("'");
+  const turns=dbl?2:1, sign=M.cw*(prime?-1:1);
+  return {axis:M.axis,layer:M.layer,angle:sign*turns*Math.PI/2};
+}
+function invMove(m){
+  if(m.includes('2'))return m;          // X2 is its own inverse
+  if(m.includes("'"))return m[0];        // X' -> X
+  return m[0]+"'";                        // X  -> X'
+}
+
+function initCube3D(){
+  if(cube3d)return cube3d;
+  const mount=document.getElementById('winCube');
+  const size=mount.clientWidth||240;
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(42,1,0.1,100);
+  camera.position.set(0,0,7);
+  const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setSize(size,size);
+  mount.appendChild(renderer.domElement);
+  scene.add(new THREE.AmbientLight(0xffffff,0.78));
+  const dir=new THREE.DirectionalLight(0xffffff,0.55);
+  dir.position.set(5,8,6);
+  scene.add(dir);
+  const group=new THREE.Group();
+  group.rotation.set(0.5,-0.6,0);   // 3/4 view: top (U), front (F) and right (R) visible
+  scene.add(group);
+  cube3d={renderer,scene,camera,group,geo:new THREE.BoxGeometry(0.93,0.93,0.93),cubies:[]};
+  return cube3d;
+}
+
+function renderCube(){cube3d.renderer.render(cube3d.scene,cube3d.camera);}
+
+function snap(c){
+  c.position.set(Math.round(c.position.x),Math.round(c.position.y),Math.round(c.position.z));
+}
+
+function buildSolved(){
+  const c=cube3d;
+  c.cubies.forEach(m=>{c.group.remove(m);m.material.forEach(mt=>mt.dispose());});
+  c.cubies=[];
+  for(let x=-1;x<=1;x++)for(let y=-1;y<=1;y++)for(let z=-1;z<=1;z++){
+    const cols=[
+      x=== 1?CUBE_COLORS.R:CUBE_DARK, x===-1?CUBE_COLORS.L:CUBE_DARK,
+      y=== 1?CUBE_COLORS.U:CUBE_DARK, y===-1?CUBE_COLORS.D:CUBE_DARK,
+      z=== 1?CUBE_COLORS.F:CUBE_DARK, z===-1?CUBE_COLORS.B:CUBE_DARK,
+    ];
+    const mats=cols.map(col=>new THREE.MeshStandardMaterial({color:col,roughness:0.5,metalness:0.05}));
+    const m=new THREE.Mesh(c.geo,mats);
+    m.position.set(x,y,z);
+    c.group.add(m);c.cubies.push(m);
+  }
+}
+
+function layerCubies(spec){
+  return cube3d.cubies.filter(c=>Math.round(c.position[spec.axis])===spec.layer);
+}
+// Bake a finished pivot rotation back into the cubies and drop the pivot.
+function bakePivot(pivot,spec){
+  pivot.rotation[spec.axis]=spec.angle;
+  pivot.updateMatrixWorld(true);
+  pivot.children.slice().forEach(c=>{cube3d.group.attach(c);snap(c);});
+  cube3d.group.remove(pivot);
+}
+
+function applyMoveInstant(move){
+  const spec=moveSpec(move);
+  const pivot=new THREE.Group();cube3d.group.add(pivot);
+  layerCubies(spec).forEach(c=>pivot.attach(c));
+  bakePivot(pivot,spec);
+}
+
+function animateMove(move,dur,run,done){
+  const spec=moveSpec(move);
+  const pivot=new THREE.Group();cube3d.group.add(pivot);
+  layerCubies(spec).forEach(c=>pivot.attach(c));
+  const t0=performance.now();
+  function frame(now){
+    if(run!==cubeRun){bakePivot(pivot,spec);return;}   // cancelled -> snap & stop
+    let t=Math.min(1,(now-t0)/dur);
+    const e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;          // easeInOutQuad
+    pivot.rotation[spec.axis]=spec.angle*e;
+    renderCube();
+    if(t<1)requestAnimationFrame(frame);
+    else{bakePivot(pivot,spec);renderCube();done&&done();}
+  }
+  requestAnimationFrame(frame);
+}
+
+// Gentle idle spin once the cube is solved, until the overlay closes.
+function startSpin(run){
+  let last=performance.now();
+  function frame(now){
+    if(run!==cubeRun)return;
+    cube3d.group.rotation.y+=(now-last)/1000*0.5;
+    last=now;
+    renderCube();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function playSolve(moves,onDone){
+  const run=++cubeRun;
+  initCube3D();
+  buildSolved();
+  // Scramble = inverse algorithm, applied instantly.
+  moves.slice().reverse().map(invMove).forEach(applyMoveInstant);
+  renderCube();
+  let i=0;
+  function step(){
+    if(run!==cubeRun)return;
+    if(i>=moves.length){onDone&&onDone(run);return;}
+    animateMove(moves[i++],300,run,step);
+  }
+  setTimeout(()=>{if(run===cubeRun)step();},500);   // let the scrambled state register first
+}
+
+function celebrateWin(timeStr, moves){
+  winActive=true;
+  const ov=document.getElementById('winOverlay');
+  const title=document.getElementById('winTitle');
+  const status=document.getElementById('winStatus');
+  const time=document.getElementById('winTime');
+  const next=document.getElementById('winNext');
+  const hint=document.getElementById('winHint');
+  time.textContent=`${timeStr}s`;
+  ov.classList.add('show');
+
+  if(!cubeReady()){   // Three.js not loaded — fall back to the simple overlay
+    document.getElementById('winCube').style.display='none';
+    status.style.display='none';
+    title.style.display='';time.style.display='';next.style.display='none';hint.style.display='none';
+    winTimeout=setTimeout(finishWin,1400);
+    return;
+  }
+
+  // Playback state: cube + status visible, result hidden.
+  document.getElementById('winCube').style.display='';
+  status.style.display='';status.textContent='Układam tymi ruchami…';
+  title.style.display='none';time.style.display='none';next.style.display='none';
+  hint.style.display='';
+
+  playSolve(moves,(run)=>{
+    if(run!==cubeRun)return;
+    status.style.display='none';
+    title.style.display='';time.style.display='';next.style.display='';
+    startSpin(run);
+    winTimeout=setTimeout(finishWin,2400);   // auto-advance; tap/button skips sooner
+  });
+}
+
+function finishWin(){
+  if(winTimeout){clearTimeout(winTimeout);winTimeout=null;}
+  cubeRun++;          // cancel any in-flight animation or idle spin
+  winActive=false;
+  document.getElementById('winOverlay').classList.remove('show');
+  nextAlgo();
+}
+
+// Tap anywhere on the overlay (outside the button) to skip ahead.
+document.getElementById('winOverlay').addEventListener('click',e=>{
+  if(e.target.id==='winNext')return;   // button has its own handler
+  if(winActive)finishWin();
+});
 
 // Start
 initCompactPref();
